@@ -1,0 +1,113 @@
+From 0879327aaaee7ce5e84da98de284f17e67dfdbb8 Mon Sep 17 00:00:00 2001
+From: Chris Wilkinson <c.wilkinson@elifesciences.org>
+Date: Mon, 30 Nov 2015 14:50:54 +0000
+Subject: [PATCH] Check any Composer repository
+
+---
+ composer.json |  1 +
+ validator.php | 44 ++++++++++++++++++++++++++++++++++++++++----
+ 2 files changed, 41 insertions(+), 4 deletions(-)
+
+diff --git a/composer.json b/composer.json
+index 3dca8ca..f82bdbe 100644
+--- a/composer.json
++++ b/composer.json
+@@ -2,6 +2,7 @@
+     "name": "sensiolabs/security-advisories",
+     "description": "Database of known security vulnerabilities in various PHP projects and libraries",
+     "require-dev": {
++        "composer/composer": "~1.0",
+         "symfony/console": "~3.0",
+         "symfony/yaml": "~3.0"
+     },
+diff --git a/validator.php b/validator.php
+index d3fa1f3..d54abd9 100644
+--- a/validator.php
++++ b/validator.php
+@@ -8,6 +8,10 @@
+ }
+ require $autoloader;
+ 
++use Composer\Config;
++use Composer\IO\NullIO;
++use Composer\Repository\ComposerRepository;
++use Composer\Repository\RepositoryInterface;
+ use Symfony\Component\Console\Application;
+ use Symfony\Component\Console\Command\Command;
+ use Symfony\Component\Console\Helper\ProgressBar;
+@@ -23,12 +27,16 @@
+ final class Validate extends Command
+ {
+     private $parser;
++    private $composerRepositories = array();
++    private $composerConfig;
+ 
+     public function __construct()
+     {
+         parent::__construct('validate');
+ 
+         $this->parser = new Parser();
++        $this->composerConfig = new Config(false);
++        $this->composerConfig->merge(array('config' => array('cache-dir' => sys_get_temp_dir().'/php-security-advisories')));
+     }
+ 
+     protected function execute(InputInterface $input, OutputInterface $output)
+@@ -84,7 +92,7 @@ protected function execute(InputInterface $input, OutputInterface $output)
+                 $data = $this->parser->parse(file_get_contents($file));
+ 
+                 // validate first level keys
+-                if ($keys = array_diff(array_keys($data), array('reference', 'branches', 'title', 'link', 'cve'))) {
++                if ($keys = array_diff(array_keys($data), array('reference', 'branches', 'title', 'link', 'cve', 'composer-repository'))) {
+                     foreach ($keys as $key) {
+                         $messages[$path][] = sprintf('Key "%s" is not supported.', $key);
+                     }
+@@ -107,10 +115,21 @@ protected function execute(InputInterface $input, OutputInterface $output)
+                             $messages[$path][] = 'Reference composer package must match the folder name';
+                         }
+ 
+-                        $packagistUrl = sprintf('https://packagist.org/packages/%s.json', $composerPackage);
++                        if (empty($data['composer-repository'])) {
++                            $data['composer-repository'] = 'https://packagist.org';
++                        }
++
++                        $composerRepository = $this->getComposerRepository($data['composer-repository']);
+ 
+-                        if(404 == explode(' ', get_headers($packagistUrl)[0], 3)[1]) {
+-                            $messages[$path][] = sprintf('Invalid composer package');
++                        $found = false;
++                        foreach ($composerRepository->search($composerPackage, RepositoryInterface::SEARCH_NAME) as $package) {
++                            if ($package['name'] === $composerPackage) {
++                                $found = true;
++                                break;
++                            }
++                        }
++                        if (!$found) {
++                            $messages[$path][] = sprintf('Invalid composer package (not found in repository %s)', $data['composer-repository']);
+                         }
+                     }
+                 }
+@@ -226,6 +245,23 @@ protected function execute(InputInterface $input, OutputInterface $output)
+ 
+         return count($messages);
+     }
++
++    private function getComposerRepository($uri)
++    {
++        if (!isset($this->composerRepositories[$uri])) {
++            $repository = new ComposerRepository(
++                array(
++                    'url' => $uri,
++                ),
++                new NullIO(),
++                $this->composerConfig
++            );
++
++            $this->composerRepositories[$uri] = $repository;
++        }
++
++        return $this->composerRepositories[$uri];
++    }
+ }
+ 
+ final class Validator extends Application
+
