@@ -4,6 +4,6 @@ cve:                 ~
 branches:
     master:
         time:     2014-11-27 12:00
-        versions: [>=2.0.0,<=2.0.0]
+        versions: ['>=2.0.0','<=2.0.0']
 reference:           composer://typo3-ter/webdav
 composer-repository: https://composer.typo3.org

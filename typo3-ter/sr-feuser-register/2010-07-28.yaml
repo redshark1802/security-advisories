@@ -4,6 +4,6 @@ cve:                 ~
 branches:
     master:
         time:     2010-07-28 12:00
-        versions: [>=2.5.25,<=2.5.25]
+        versions: ['>=2.5.25','<=2.5.25']
 reference:           composer://typo3-ter/sr-feuser-register
 composer-repository: https://composer.typo3.org

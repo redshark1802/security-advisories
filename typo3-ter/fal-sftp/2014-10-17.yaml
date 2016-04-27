@@ -4,6 +4,6 @@ cve:                 ~
 branches:
     master:
         time:     2014-10-17 12:00
-        versions: [>=0.2.4, <=0.2.5]
+        versions: ['>=0.2.4', '<=0.2.5']
 reference:           composer://typo3-ter/fal-sftp
 composer-repository: https://composer.typo3.org

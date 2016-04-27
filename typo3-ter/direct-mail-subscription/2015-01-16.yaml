@@ -4,6 +4,6 @@ cve:                 ~
 branches:
     master:
         time:     2015-01-16 12:00
-        versions: [>=2.0.1,<=2.0.1]
+        versions: ['>=2.0.1','<=2.0.1']
 reference:           composer://typo3-ter/direct-mail-subscription
 composer-repository: https://composer.typo3.org

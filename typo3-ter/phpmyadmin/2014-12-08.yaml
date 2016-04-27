@@ -4,6 +4,6 @@ cve:                 ~
 branches:
     master:
         time:     2014-12-08 12:00
-        versions: [>=4.18.0,<4.18.5]
+        versions: ['>=4.18.0','<4.18.5']
 reference:           composer://typo3-ter/phpmyadmin
 composer-repository: https://composer.typo3.org
