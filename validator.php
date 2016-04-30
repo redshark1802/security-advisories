@@ -3,7 +3,16 @@
 
 // validates that all security advisories are valid
 
-if (!is_file($autoloader = __DIR__.'/vendor/autoload.php')) {
+$autoloaderLocations = array(__DIR__, '../../');
+$autoloader = null;
+
+foreach ($autoloaderLocations as $autoloaderLocation) {
+    if (is_file($autoloaderLocation . '/vendor/autoload.php')) {
+        $autoloader = $autoloaderLocation . '/vendor/autoload.php';
+    }
+}
+
+if ($autoloader === null) {
     echo "Dependencies are not installed, please run 'composer install' first!\n";
     exit(1);
 }
