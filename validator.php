@@ -1,3 +1,4 @@
+#!/usr/bin/env php
 <?php
 
 // validates that all security advisories are valid
