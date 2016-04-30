@@ -26,6 +26,9 @@ use Symfony\Component\Yaml\Parser;
 
 final class Validate extends Command
 {
+    /**
+     * @var Parser
+     */
     private $parser;
     private $composerRepositories = array();
     private $composerConfig;
@@ -39,11 +42,27 @@ final class Validate extends Command
         $this->composerConfig->merge(array('config' => array('cache-dir' => sys_get_temp_dir().'/php-security-advisories')));
     }
 
+    public function configure()
+    {
+        $this->addArgument(
+            'paths',
+            \Symfony\Component\Console\Input\InputArgument::IS_ARRAY,
+            'paths containing issue definitions'
+        );
+
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $io = new SymfonyStyle($input, $output);
 
+        $paths = $input->getArgument('paths');
+
+        //the current directory is used by default
+        $paths[] = __DIR__;
+
         $advisoryFilter = function (SplFileInfo $file) {
+
             if ($file->isFile() && __DIR__ === $file->getPath()) {
                 return false; // We want to skip root files
             }
@@ -68,28 +87,38 @@ final class Validate extends Command
 
         $messages = array();
 
-        /* @var $dir \SplFileInfo[] */
-        $dir = new \RecursiveIteratorIterator(new RecursiveCallbackFilterIterator(new \RecursiveDirectoryIterator(__DIR__), $advisoryFilter));
+        $fileCount = 0;
+        $dirs = array();
 
-        $progress = new ProgressBar($io, count(iterator_to_array($dir)));
+        foreach ($paths as $path) {
+            /* @var $dir \SplFileInfo[] */
+            $directory = new \RecursiveIteratorIterator(new RecursiveCallbackFilterIterator(new \RecursiveDirectoryIterator($path), $advisoryFilter));
+            $fileCount += count(iterator_to_array($directory));
+            $dirs[] = $directory;
+        }
+
+        $progress = new ProgressBar($io, $fileCount);
         $progress->start();
 
-        foreach ($dir as $file) {
-            if (!$file->isFile()) {
-                $progress->advance();
+        foreach ($dirs as $dir) {
 
-                continue;
-            }
+            foreach ($dir as $file) {
 
-            $path = str_replace(__DIR__.DIRECTORY_SEPARATOR, '', $file->getPathname());
+                if (!$file->isFile()) {
+                    $progress->advance();
 
-            if ('yaml' !== $file->getExtension()) {
-                $messages[$path][] = 'The file extension should be ".yaml".';
-                continue;
-            }
+                    continue;
+                }
 
-            try {
-                $data = $this->parser->parse(file_get_contents($file));
+                $path = str_replace(__DIR__.DIRECTORY_SEPARATOR, '', $file->getPathname());
+
+                if ('yaml' !== $file->getExtension()) {
+                    $messages[$path][] = 'The file extension should be ".yaml".';
+                    continue;
+                }
+
+                try {
+                    $data = $this->parser->parse(file_get_contents($file));
 
                 // validate first level keys
                 if ($keys = array_diff(array_keys($data), array('reference', 'branches', 'title', 'link', 'cve', 'composer-repository'))) {
@@ -98,22 +127,24 @@ final class Validate extends Command
                     }
                 }
 
-                // required keys
-                foreach (array('reference', 'title', 'link', 'branches') as $key) {
-                    if (!isset($data[$key])) {
-                        $messages[$path][] = sprintf('Key "%s" is required.', $key);
-                    }
-                }
-
-                if (isset($data['reference'])) {
-                    if (0 !== strpos($data['reference'], 'composer://')) {
-                        $messages[$path][] = 'Reference must start with "composer://"';
-                    } else {
-                        $composerPackage = substr($data['reference'], 11);
-
-                        if (str_replace(DIRECTORY_SEPARATOR, '/', dirname($path)) !== $composerPackage) {
-                            $messages[$path][] = 'Reference composer package must match the folder name';
+                    // required keys
+                    foreach (array('reference', 'title', 'link', 'branches') as $key) {
+                        if (!isset($data[$key])) {
+                            $messages[$path][] = sprintf('Key "%s" is required.', $key);
                         }
+                    }
+
+                    if (isset($data['reference'])) {
+                        if (0 !== strpos($data['reference'], 'composer://')) {
+                            $messages[$path][] = 'Reference must start with "composer://"';
+                        } else {
+                            $composerPackage = substr($data['reference'], 11);
+
+                            //check if the folder containing the issue ends with the referenced package name
+                            if ((substr($file->getPath(), -1) == $composerPackage)) {
+                                $messages[$path][] = 'Reference composer package must match the folder name';
+                            }
+
 
                         if (empty($data['composer-repository'])) {
                             $data['composer-repository'] = 'https://packagist.org';
@@ -134,77 +165,79 @@ final class Validate extends Command
                     }
                 }
 
-                if (!isset($data['branches'])) {
-                    $progress->advance();
+                    if (!isset($data['branches'])) {
+                        $progress->advance();
 
-                    continue; // Don't validate branches when not set to avoid notices
-                }
-
-                if (!is_array($data['branches'])) {
-                    $messages[$path][] = '"branches" must be an array.';
-                    $progress->advance();
-
-                    continue;  // Don't validate branches when not set to avoid notices
-                }
-
-                $upperBoundWithoutLowerBound = null;
-
-                foreach ($data['branches'] as $name => $branch) {
-                    if (!preg_match('/^([\d\.\-]+(\.x)?(\-dev)?|master)$/', $name)) {
-                        $messages[$path][] = sprintf('Invalid branch name "%s".', $name);
+                        continue; // Don't validate branches when not set to avoid notices
                     }
 
-                    if ($keys = array_diff(array_keys($branch), array('time', 'versions'))) {
-                        foreach ($keys as $key) {
-                            $messages[$path][] = sprintf('Key "%s" is not supported for branch "%s".', $key, $name);
+                    if (!is_array($data['branches'])) {
+                        $messages[$path][] = '"branches" must be an array.';
+                        $progress->advance();
+
+                        continue;  // Don't validate branches when not set to avoid notices
+                    }
+
+                    $upperBoundWithoutLowerBound = null;
+
+                    foreach ($data['branches'] as $name => $branch) {
+                        if (!preg_match('/^([\d\.\-]+(\.x)?(\-dev)?|master)$/', $name)) {
+                            $messages[$path][] = sprintf('Invalid branch name "%s".', $name);
                         }
-                    }
 
-                    if (!isset($branch['time'])) {
-                        $messages[$path][] = sprintf('Key "time" is required for branch "%s".', $name);
-                    }
-
-                    if (!isset($branch['versions'])) {
-                        $messages[$path][] = sprintf('Key "versions" is required for branch "%s".', $name);
-                    } elseif (!is_array($branch['versions'])) {
-                        $messages[$path][] = sprintf('"versions" must be an array for branch "%s".', $name);
-                    } else {
-                        $upperBound = null;
-                        $hasMin = false;
-                        foreach ($branch['versions'] as $version) {
-                            if (!$isAcceptableVersionConstraint($version)) {
-                                $messages[$path][] = sprintf('Version constraint "%s" is not in an acceptable format.', $version);
-                            }
-
-                            if ('<' === substr($version, 0, 1)) {
-                                $upperBound = $version;
-                                continue;
-                            }
-                            if ('>' === substr($version, 0, 1)) {
-                                $hasMin = true;
+                        if ($keys = array_diff(array_keys($branch), array('time', 'versions'))) {
+                            foreach ($keys as $key) {
+                                $messages[$path][] = sprintf('Key "%s" is not supported for branch "%s".', $key, $name);
                             }
                         }
 
-                        if (null === $upperBound) {
-                            $messages[$path][] = sprintf('"versions" must have an upper bound for branch "%s".', $name);
+                        if (!isset($branch['time'])) {
+                            $messages[$path][] = sprintf('Key "time" is required for branch "%s".', $name);
                         }
 
-                        if (!$hasMin && null === $upperBoundWithoutLowerBound) {
-                            $upperBoundWithoutLowerBound = $upperBound;
-                        }
+                        if (!isset($branch['versions'])) {
+                            $messages[$path][] = sprintf('Key "versions" is required for branch "%s".', $name);
+                        } elseif (!is_array($branch['versions'])) {
+                            $messages[$path][] = sprintf('"versions" must be an array for branch "%s".', $name);
+                        } else {
+                            $upperBound = null;
+                            $hasMin = false;
+                            foreach ($branch['versions'] as $version) {
+                                if (!$isAcceptableVersionConstraint($version)) {
+                                    $messages[$path][] = sprintf('Version constraint "%s" is not in an acceptable format.', $version);
+                                }
 
-                        // Branches can omit the lower bound only if their upper bound is the same than for other branches without lower bound.
-                        if (!$hasMin && $upperBoundWithoutLowerBound !== $upperBound) {
-                            $messages[$path][] = sprintf('"versions" must have a lower bound for branch "%s" to avoid overlapping lower branches.', $name);
+                                if ('<' === substr($version, 0, 1)) {
+                                    $upperBound = $version;
+                                    continue;
+                                }
+                                if ('>' === substr($version, 0, 1)) {
+                                    $hasMin = true;
+                                }
+                            }
+
+                            if (null === $upperBound) {
+                                $messages[$path][] = sprintf('"versions" must have an upper bound for branch "%s".', $name);
+                            }
+
+                            if (!$hasMin && null === $upperBoundWithoutLowerBound) {
+                                $upperBoundWithoutLowerBound = $upperBound;
+                            }
+
+                            // Branches can omit the lower bound only if their upper bound is the same than for other branches without lower bound.
+                            if (!$hasMin && $upperBoundWithoutLowerBound !== $upperBound) {
+                                $messages[$path][] = sprintf('"versions" must have a lower bound for branch "%s" to avoid overlapping lower branches.', $name);
+                            }
                         }
                     }
+                } catch (ParseException $e) {
+                    $messages[$path][] = sprintf('YAML is not valid (%s).', $e->getMessage());
                 }
-            } catch (ParseException $e) {
-                $messages[$path][] = sprintf('YAML is not valid (%s).', $e->getMessage());
+
+                $progress->advance();
             }
-
-            $progress->advance();
         }
+
 
         $progress->finish();
 
