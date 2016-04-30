@@ -12,5 +12,6 @@
             "name": "Fabien Potencier",
             "email": "fabien.potencier@gmail.com"
         }
-    ]
+    ],
+    "bin": ["validator.php"]
 }
