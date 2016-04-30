@@ -3,7 +3,11 @@
 
 // validates that all security advisories are valid
 
-$autoloaderLocations = array(__DIR__, '../../');
+$autoloaderLocations = array(
+    __DIR__ . '/../../autoload.php',
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/vendor/autoload.php',
+    );
 $autoloader = null;
 
 foreach ($autoloaderLocations as $autoloaderLocation) {
