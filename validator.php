@@ -11,8 +11,8 @@ $autoloaderLocations = array(
 $autoloader = null;
 
 foreach ($autoloaderLocations as $autoloaderLocation) {
-    if (is_file($autoloaderLocation . '/vendor/autoload.php')) {
-        $autoloader = $autoloaderLocation . '/vendor/autoload.php';
+    if (is_file($autoloaderLocation)) {
+        $autoloader = $autoloaderLocation ;
     }
 }
 
